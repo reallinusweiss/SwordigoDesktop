@@ -80,7 +80,7 @@ struct FrameStats {
         draw_calls = texture_binds = tex_uploads = matrix_ops = 0;
         state_changes = asset_opens = clear_calls = viewport_calls = 0;
         vertices_submitted = vertex_pointer_calls = texcoord_pointer_calls = color_pointer_calls = 0;
-        last_bound_texture = 0;
+        // Texture binding is persistent GL state, not a per-frame counter.
         unique_textures_bound = 0;
         // Don't reset asset proof flags — they're cumulative across boot
     }

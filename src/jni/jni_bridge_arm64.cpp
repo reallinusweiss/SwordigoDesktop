@@ -22,6 +22,7 @@ extern "C" const char* sre_resolve_symbol(uint64_t addr);
 #include "platform/emulator_arm64.h"  // For backward compat — EmulatorArm64 inherits IEmulatorArm64
 #include "platform/io_thread.h"
 #include "platform/data_path.h"
+#include "platform/guest_libc64.h"
 #include "android/asset_manager.h"
 #include "platform/video_background.h"
 #include "platform/pvrtc_decoder.h"
@@ -199,7 +200,17 @@ void JniBridge64::call_handler(uint64_t address, void* emu_ptr) {
     if (addr_to_func.count(address)) {
         BridgeFunction64& func = addr_to_func[address];
         if (func.handler) {
-            func.handler(emu_ptr);
+            try {
+                func.handler(emu_ptr);
+            } catch (const std::exception& error) {
+                auto* emu=static_cast<IEmulatorArm64*>(emu_ptr);
+                std::fprintf(stderr,"[Bridge64/Fatal] %s: %s (PC=0x%llx LR=0x%llx X0=0x%llx X1=0x%llx)\n",
+                    func.name.c_str(),error.what(),
+                    static_cast<unsigned long long>(emu->get_pc()),static_cast<unsigned long long>(emu->get_lr()),
+                    static_cast<unsigned long long>(emu->get_reg(0)),static_cast<unsigned long long>(emu->get_reg(1)));
+                std::fflush(stderr);
+                throw;
+            }
         } else {
             // ALWAYS log unhandled calls — critical for debugging crashes
             std::cerr << "[Bridge64] !! UNHANDLED: " << func.name << std::endl;
@@ -2607,7 +2618,7 @@ static void bridge_strtol(void* emu_ptr) {
     uint32_t endptr_ptr = emu->get_reg(1);
     int base = (int)emu->get_reg(2);
     char* endptr = nullptr;
-    long result = std::strtol((const char*)(memory + str), &endptr, base);
+    int64_t result = guest64::strtol((const char*)(memory + str), &endptr, base);
     if (endptr_ptr && endptr) {
         uint64_t offset = (uint64_t)(endptr - (char*)(memory + str));
         *(uint64_t*)(memory + endptr_ptr) = (uint64_t)(str + offset);  // ARM64: 64-bit pointers!
@@ -2622,7 +2633,7 @@ static void bridge_strtoul(void* emu_ptr) {
     uint32_t endptr_ptr = emu->get_reg(1);
     int base = (int)emu->get_reg(2);
     char* endptr = nullptr;
-    unsigned long result = std::strtoul((const char*)(memory + str), &endptr, base);
+    uint64_t result = guest64::strtoul((const char*)(memory + str), &endptr, base);
     if (endptr_ptr && endptr) {
         uint64_t offset = (uint64_t)(endptr - (char*)(memory + str));
         *(uint64_t*)(memory + endptr_ptr) = (uint64_t)(str + offset);  // ARM64: 64-bit pointers!
@@ -4493,10 +4504,10 @@ static void bridge_fwrite(void* emu_ptr) {
 static void bridge_fseek(void* emu_ptr) {
     IEmulatorArm64* emu = (IEmulatorArm64*)emu_ptr;
     uint32_t handle = emu->get_reg(0);
-    int32_t offset = (int32_t)emu->get_reg(1);
+    int64_t offset = (int64_t)emu->get_reg(1);
     int whence = (int)emu->get_reg(2);
     if (g_file_handles.count(handle)) {
-        emu->set_reg(0, (uint32_t)fseek(g_file_handles[handle], offset, whence));
+        emu->set_reg(0, (uint64_t)(int64_t)guest64::fseek(g_file_handles[handle], offset, whence));
     } else {
         emu->set_reg(0, (uint32_t)-1);
     }
@@ -4506,9 +4517,9 @@ static void bridge_ftell(void* emu_ptr) {
     IEmulatorArm64* emu = (IEmulatorArm64*)emu_ptr;
     uint32_t handle = emu->get_reg(0);
     if (g_file_handles.count(handle)) {
-        emu->set_reg(0, (uint32_t)ftell(g_file_handles[handle]));
+        emu->set_reg(0, (uint64_t)guest64::ftell(g_file_handles[handle]));
     } else {
-        emu->set_reg(0, (uint32_t)-1);
+        emu->set_reg(0, UINT64_MAX);
     }
 }
 
@@ -5437,14 +5448,14 @@ static void bridge_open(void* emu_ptr) {
         resolved_path = std::string(get_assets_base_path()) + "/" + path;
     }
 
-    bool is_write = (flags & (O_WRONLY | O_RDWR | O_CREAT));
+    bool is_write = guest64::open_writes(flags);
     if (is_write) {
         try {
             fs::create_directories(fs::path(resolved_path).parent_path());
         } catch (...) {}
     }
 
-    int fd = open(resolved_path.c_str(), flags, mode);
+    int fd = guest64::open(resolved_path.c_str(), flags, mode);
 
     if (fd < 0 && !is_write) {
         const char* rel = path;
@@ -5458,7 +5469,7 @@ static void bridge_open(void* emu_ptr) {
         if (base && base[0] && rel && rel[0]) {
             char basepath[640];
             snprintf(basepath, sizeof(basepath), "%s/resources/%s", base, rel);
-            fd = open(basepath, flags, mode);
+            fd = guest64::open(basepath, flags, mode);
             if (fd >= 0) {
                 resolved_path = basepath;
             }
