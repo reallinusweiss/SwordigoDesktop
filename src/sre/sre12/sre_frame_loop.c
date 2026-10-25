@@ -67,7 +67,7 @@
 #include "sre_caver.h"
 
 /* clock_gettime forward declarations (freestanding ARM64 — no libc headers) */
-struct timespec { long tv_sec; long tv_nsec; };
+#include <time.h>
 #ifndef CLOCK_MONOTONIC
 #define CLOCK_MONOTONIC 1
 #endif

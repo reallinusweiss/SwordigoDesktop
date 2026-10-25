@@ -33,7 +33,7 @@ extern void *g_lua_mutex_ptr;
 #include "sre_caver.h"
 
 /* clock_gettime forward declarations (freestanding — no <time.h> in sre.h) */
-struct timespec { long tv_sec; long tv_nsec; };
+#include <time.h>
 #define CLOCK_MONOTONIC 1
 extern int clock_gettime(int clk_id, struct timespec *tp);
 

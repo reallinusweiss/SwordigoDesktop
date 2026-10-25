@@ -10,6 +10,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
 #ifndef NULL
 #define NULL ((void*)0)
@@ -112,7 +113,6 @@ extern volatile uint64_t g_sre_gameover_respawn_controller;
 /* Exported hooks — Scene Loading & Transition */
 void sre_SceneLoadingView_InitWithGameState(void* self, void* gameState, void* mapNode);
 void sre_SceneLoadingView_Update(void* self, float dt);
-void sre_SceneLoadingView_AnimateIn(void* self);
 void sre_Scene_FinishLoad(void* self);
 void sre_SceneObjectGroup_FinishLoad(void* self);
 int  sre_ComponentOutletBase_Connect(void* self, void* component);

@@ -68,7 +68,7 @@
 #include <stdlib.h>
 
 /* ── clock_gettime (same freestanding pattern as sre_frame_loop.c) ─────── */
-struct timespec { long tv_sec; long tv_nsec; };
+#include <time.h>
 #ifndef CLOCK_MONOTONIC
 #define CLOCK_MONOTONIC 1
 #endif

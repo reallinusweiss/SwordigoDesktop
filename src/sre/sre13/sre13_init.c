@@ -75,7 +75,9 @@ SreHookEntry sre_hook_table[] = {
     /* Scene Loading & Transition Safety */
     { 0, "sre_SceneLoadingView_InitWithGameState", 0 },
     { 0, "sre_SceneLoadingView_Update", 0 },
-    { 0, "sre_SceneLoadingView_AnimateIn", 0 },
+    /* AnimateIn returns a nontrivial C++ object through AAPCS64 X8. A void
+     * C wrapper loses that hidden result pointer and corrupts the view. Leave
+     * the original method intact; the old hook only forwarded the call. */
     { 0, "sre_Scene_FinishLoad", 0 },
     { 0, "sre_SceneObjectGroup_FinishLoad", 0 },
     { 0, "sre_ComponentOutletBase_Connect", 0 },

@@ -12,7 +12,6 @@ volatile int g_sre_suppress_hud_frames = 0;
 /* Relays filled by TrampolineMgr */
 uint64_t g_orig_SceneLoadingView_InitWithGameState = 0;
 uint64_t g_orig_SceneLoadingView_Update = 0;
-uint64_t g_orig_SceneLoadingView_AnimateIn = 0;
 uint64_t g_orig_Scene_FinishLoad = 0;
 uint64_t g_orig_SceneObjectGroup_FinishLoad = 0;
 uint64_t g_orig_ComponentOutletBase_Connect = 0;
@@ -79,14 +78,6 @@ void sre_GameOverViewController_Update(void* self, float dt) {
     if (g_orig_GameOverViewController_Update) {
         typedef void (*fn_update)(void*, float);
         ((fn_update)g_orig_GameOverViewController_Update)(self, dt);
-    }
-}
-
-/* SceneLoadingView::AnimateIn hook */
-void sre_SceneLoadingView_AnimateIn(void* self) {
-    if (g_orig_SceneLoadingView_AnimateIn) {
-        typedef void (*fn_anim)(void*);
-        ((fn_anim)g_orig_SceneLoadingView_AnimateIn)(self);
     }
 }
 

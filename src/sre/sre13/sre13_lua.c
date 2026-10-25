@@ -138,8 +138,8 @@ void sre_luaD_throw(void* L, int errcode) {
             }
         }
         fprintf(stderr,
-                "[SRE13/luaD_throw] #%d errcode=%d depth=%d caller=0x%llx msg=\"%s\"\n",
-                g_sre13_throw_diag_count, errcode, g_sre_recovery_depth, g_lr, msg);
+                "[SRE13/luaD_throw] #%d errcode=%d depth=%d msg=\"%s\"\n",
+                g_sre13_throw_diag_count, errcode, g_sre_recovery_depth, msg);
         fflush(stderr);
     }
 
@@ -456,153 +456,38 @@ int sre_lua_resume_safe(void* Lv, int narg) {
     return res;
 }
 
-/* Safe ProgramState::Execute — replaces raw lua_call with protected lua_pcall */
+/* Preserve the engine scheduler around the protected Lua boundary. The
+ * original Resume (1.4.13: 0x545624) clears isSuspended before lua_resume
+ * and marks completed unless the result is LUA_YIELD. Execute's coroutine
+ * path (0x5456f8) performs the same transitions. */
+#include "program_state_resume.h"
+
+static void sre13_prepare_program_state(lua_State* L, void* self) {
+    sre13_ensure_injected(L);
+    sre13_console_set_root_and_ps(L, self);
+    sre13_console_frame_tick(0.0f);
+    if (__builtin_expect(g_sre_scene_shift_pending != 0 || g_sre_scene_shift_active != 0, 0))
+        sre13_scene_shifter_tick();
+}
+
 void sre_ProgramState_Execute(void* self, int stackIndex) {
     if (!self) return;
     lua_State* L = PS_GET(self, PS_LUA_STATE, lua_State*);
     if (!L || !g_lua_pcall) return;
-
-    /* Ensure custom modules (ButtonController, SceneShifter, Mini, ffi, memory)
-     * are registered into _G for this live state. */
-    sre13_ensure_injected(L);
-
-    /* Capture the live game lua_State and ProgramState for the per-frame console tick */
-    sre13_console_set_root_and_ps(L, self);
-
-    /* Service the live console ONCE per frame (guard inside) so game C++ APIs
-     * called from console scripts run in the valid ProgramState scene context,
-     * not at the shell update tail. */
-    sre13_console_frame_tick(0.0f);
-
-    if (__builtin_expect(g_sre_scene_shift_pending != 0 || g_sre_scene_shift_active != 0, 0)) {
-        sre13_scene_shifter_tick();
-    }
-
-    CallInfo* saved_ci = L->ci;
-    StkId saved_top = L->top;
-    StkId saved_base = L->base;
-    unsigned short saved_nCcalls = L->nCcalls;
-
-    void* coroutine = PS_GET(self, PS_COROUTINE, void*);
-    if (coroutine == NULL) {
-        int my_depth = sre13_recovery_push(L);
-        if (my_depth < 0) {
-            int res;
-            sre13_arm_timeout(L);
-            res = g_lua_pcall(L, stackIndex, 0, 0);
-            sre13_disarm_timeout(L);
-            if (res != 0) {
-                sre13_capture_error(L);
-                if (g_lua_settop) g_lua_settop(L, -2);
-            }
-            return;
-        }
-        if (sre_setjmp(g_sre_recovery_stack[my_depth].buf) != 0) {
-            sre13_recovery_pop(my_depth);
-            sre13_disarm_timeout(L);
-            g_sre13_lua_error_count++;
-            sre13_restore_vm(L, saved_ci, saved_top, saved_base, saved_nCcalls, stackIndex);
-            return;
-        }
-        int res;
-        sre13_arm_timeout(L);
-        res = g_lua_pcall(L, stackIndex, 0, 0);
-        sre13_disarm_timeout(L);
-        sre13_recovery_pop(my_depth);
-        if (res != 0) {
-            sre13_capture_error(L);
-            if (g_lua_settop) g_lua_settop(L, -2);
-        }
-    } else {
-        if (g_lua_resume) {
-            int my_depth = sre13_recovery_push(L);
-            if (my_depth < 0) {
-                int res;
-                sre13_arm_timeout(L);
-                res = g_lua_resume(L, stackIndex);
-                sre13_disarm_timeout(L);
-                if (res != 0 && res != 1 /* LUA_YIELD */) {
-                    sre13_capture_error(L);
-                    if (g_lua_settop) g_lua_settop(L, -2);
-                }
-                return;
-            }
-            if (sre_setjmp(g_sre_recovery_stack[my_depth].buf) != 0) {
-                sre13_recovery_pop(my_depth);
-                sre13_disarm_timeout(L);
-                g_sre13_lua_error_count++;
-                sre13_capture_error(L);
-                sre13_restore_vm(L, saved_ci, saved_top, saved_base, saved_nCcalls, 0);
-                return;
-            }
-            int res;
-            sre13_arm_timeout(L);
-            res = g_lua_resume(L, stackIndex);
-            sre13_disarm_timeout(L);
-            sre13_recovery_pop(my_depth);
-            if (res != 0 && res != 1 /* LUA_YIELD */) {
-                sre13_capture_error(L);
-                if (g_lua_settop) g_lua_settop(L, -2);
-            }
-        }
+    sre13_prepare_program_state(L, self);
+    if (PS_GET(self, PS_COROUTINE, void*) == NULL) {
+        sre_lua_call_safe(L, stackIndex, 0);
+    } else if (g_lua_resume) {
+        sre13_resume_program(self, L, stackIndex, sre_lua_resume_safe);
     }
 }
 
-/* Safe ProgramState::Resume */
 int sre_ProgramState_Resume(void* self, int narg) {
     if (!self) return 0;
     lua_State* L = PS_GET(self, PS_LUA_STATE, lua_State*);
     if (!L || !g_lua_resume) return 0;
-
-    sre13_ensure_injected(L);
-
-    /* Capture the live game lua_State and ProgramState for the per-frame console tick */
-    sre13_console_set_root_and_ps(L, self);
-
-    /* Service the live console ONCE per frame (guard inside). */
-    sre13_console_frame_tick(0.0f);
-
-    if (__builtin_expect(g_sre_scene_shift_pending != 0 || g_sre_scene_shift_active != 0, 0)) {
-        sre13_scene_shifter_tick();
-    }
-
-    CallInfo* saved_ci = L->ci;
-    StkId saved_top = L->top;
-    StkId saved_base = L->base;
-    unsigned short saved_nCcalls = L->nCcalls;
-
-    int my_depth = sre13_recovery_push(L);
-    if (my_depth < 0) {
-        int res;
-        sre13_arm_timeout(L);
-        res = g_lua_resume(L, narg);
-        sre13_disarm_timeout(L);
-        if (res != 0 && res != 1) {
-            sre13_capture_error(L);
-            if (g_lua_settop) g_lua_settop(L, -2);
-        }
-        return res;
-    }
-
-    if (sre_setjmp(g_sre_recovery_stack[my_depth].buf) != 0) {
-        sre13_recovery_pop(my_depth);
-        sre13_disarm_timeout(L);
-        g_sre13_lua_error_count++;
-        sre13_capture_error(L);
-        sre13_restore_vm(L, saved_ci, saved_top, saved_base, saved_nCcalls, 0);
-        return 2; /* LUA_ERRRUN */
-    }
-
-    int res;
-    sre13_arm_timeout(L);
-    res = g_lua_resume(L, narg);
-    sre13_disarm_timeout(L);
-    sre13_recovery_pop(my_depth);
-    if (res != 0 && res != 1) {
-        sre13_capture_error(L);
-        if (g_lua_settop) g_lua_settop(L, -2);
-    }
-    return res;
+    sre13_prepare_program_state(L, self);
+    return sre13_resume_program(self, L, narg, sre_lua_resume_safe);
 }
 
 /* Safe panic handler — logs and returns without std::terminate.
