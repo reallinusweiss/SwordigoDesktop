@@ -2199,6 +2199,28 @@ void fbo_begin_game() {
 void fbo_end_game_and_blit(int win_w, int win_h, FBOScale mode, const PostFXState* postfx) {
     if (!g_fbo_ok || !postfx || !postfx->enabled) return;
 
+    // Caver caches texture bindings across frames (e.g. the Game Over font).
+    // Every presentation path, including early returns, must leave them intact.
+    struct TextureBindings {
+        GLint active = 0;
+        GLint units[4]{};
+        TextureBindings() {
+            glGetIntegerv(GL_ACTIVE_TEXTURE, &active);
+            for (int i=0; i<4; ++i) {
+                glActiveTexture(GL_TEXTURE0+i);
+                glGetIntegerv(GL_TEXTURE_BINDING_2D, &units[i]);
+            }
+            glActiveTexture(active);
+        }
+        ~TextureBindings() {
+            for (int i=0; i<4; ++i) {
+                glActiveTexture(GL_TEXTURE0+i);
+                glBindTexture(GL_TEXTURE_2D, units[i]);
+            }
+            glActiveTexture(active);
+        }
+    } texture_bindings;
+
     static int end_diag_count = 0;
     if (end_diag_count < 5) {
         GLenum err = glGetError();

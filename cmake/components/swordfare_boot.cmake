@@ -5,6 +5,7 @@
 
 add_executable(swordfare_boot
     ${SRC_DIR}/main.cpp
+    ${SRC_DIR}/platform/client_host_smoke.cpp
     ${SRC_DIR}/platform/arm64_reloc.cpp
     ${SRC_DIR}/platform/display.cpp
     ${SRC_DIR}/platform/pod_ipc.cpp
@@ -17,6 +18,20 @@ add_executable(swordfare_boot
     ${SRC_DIR}/platform/ffmpeg_dyn.cpp)
 set_target_properties(swordfare_boot PROPERTIES OUTPUT_NAME swordfare AUTOMOC ON)
 swordigo_target(swordfare_boot)
+if (WIN32)
+    enable_language(RC)
+    target_sources(swordfare_boot PRIVATE ${SRC_DIR}/platform/windows_client.rc)
+    target_include_directories(swordfare_boot PRIVATE ${SRC_DIR}/platform)
+    if (MINGW)
+        # windres otherwise builds an unquoted absolute gcc command internally.
+        # Resolve cpp through PATH so toolchains under paths with spaces work.
+        set_source_files_properties(${SRC_DIR}/platform/windows_client.rc
+            PROPERTIES COMPILE_OPTIONS "--preprocessor=cpp")
+    endif()
+    if (MSVC)
+        target_link_options(swordfare_boot PRIVATE /MANIFEST:NO)
+    endif()
+endif()
 
 target_link_libraries(swordfare_boot PRIVATE
     swcore swgui swfmt swpod filerift swgfx swemu swordfare
@@ -31,21 +46,5 @@ endif()
 
 
 if (SWORDIGO_USE_DYNARMIC)
-    if (MSVC)
-        # MSVC: multi-config build produces the libs under a <Config>/ subdir.
-        set(_dyn_cfg "$<UPPER_CASE:$<CONFIG>>")
-        target_link_libraries(swordfare_boot PRIVATE
-            ${SWORDIGO_DYNARMIC_ROOT}/src/dynarmic/$<UPPER_CASE:$<CONFIG>>/dynarmic.lib
-            ${SWORDIGO_DYNARMIC_ROOT}/externals/mcl/src/$<UPPER_CASE:$<CONFIG>>/mcl.lib
-            ${SWORDIGO_DYNARMIC_ROOT}/externals/fmt/$<UPPER_CASE:$<CONFIG>>/fmt.lib
-            ${SWORDIGO_DYNARMIC_ROOT}/externals/zydis/$<UPPER_CASE:$<CONFIG>>/Zydis.lib
-            ${SWORDIGO_DYNARMIC_ROOT}/externals/zydis/zycore/$<UPPER_CASE:$<CONFIG>>/Zycore.lib)
-    else()
-        target_link_libraries(swordfare_boot PRIVATE
-            ${SWORDIGO_DYNARMIC_ROOT}/src/dynarmic/libdynarmic.a
-            ${SWORDIGO_DYNARMIC_ROOT}/externals/mcl/src/libmcl.a
-            ${SWORDIGO_DYNARMIC_ROOT}/externals/fmt/libfmt.a
-            ${SWORDIGO_DYNARMIC_ROOT}/externals/zydis/libZydis.a
-            ${SWORDIGO_DYNARMIC_ROOT}/externals/zydis/zycore/libZycore.a)
-    endif()
+    target_link_libraries(swordfare_boot PRIVATE dynarmic)
 endif()

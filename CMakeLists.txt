@@ -83,8 +83,10 @@ include(cmake/components/swcore.cmake)
 include(cmake/components/swgui.cmake)
 include(cmake/components/swfmt_swpod.cmake)
 include(cmake/components/filerift.cmake)
-include(cmake/components/caver.cmake)      # Ruby's own recovered Caver runtime
-include(cmake/components/opensw.cmake)     # Boot the recovered runtime into a level
+if (NOT SWORDIGO_CLIENT_ONLY)
+    include(cmake/components/caver.cmake)
+    include(cmake/components/opensw.cmake)
+endif()
 include(cmake/components/swgfx.cmake)
 include(cmake/components/swemu.cmake)
 include(cmake/components/swordfare.cmake)
@@ -98,6 +100,7 @@ include(cmake/components/build_studio.cmake)
 include(cmake/components/sre.cmake)
 include(cmake/components/sre13.cmake)
 include(cmake/components/misc.cmake)
+include(cmake/components/client_tests.cmake)
 
 if (BUILD_TESTING)
     # -----------------------------------------------------------------------
@@ -995,7 +998,7 @@ if (BUILD_TESTING)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${_swordigo_app_runtime_out}")
     set(SWORDIGO_ORIGIN_LIBS_DIR "$ORIGIN/libs")
     unset(_swordigo_app_runtime_out)
-else()
+elseif (NOT SWORDIGO_CLIENT_TESTS)
     # -----------------------------------------------------------------------
     # Normal build: declare no test target — AND make the build tree admit it.
     # -----------------------------------------------------------------------

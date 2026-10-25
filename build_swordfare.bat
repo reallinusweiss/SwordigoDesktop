@@ -20,6 +20,10 @@ set HOST_COMPILER=gcc
 
 :parse_args
 if "%~1"=="" goto after_args
+if /i "%~1"=="--client" (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%ROOT_DIR%\tools\windows\build.ps1"
+    exit /b !ERRORLEVEL!
+)
 if /i "%~1"=="--nogui" (
     set NOGUI=1
     shift
@@ -76,7 +80,9 @@ if %STRIP%==1 (
 )
 
 cmake !CMAKE_OPTS!
-cmake --build "%BUILD_DIR%" --target swordfare
+if errorlevel 1 exit /b 1
+cmake --build "%BUILD_DIR%" --target swordfare_boot --config Release
+if errorlevel 1 exit /b 1
 
 echo Build finished.
 endlocal

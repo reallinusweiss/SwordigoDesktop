@@ -215,3 +215,9 @@ See [`LICENSE.md`](LICENSE.md), [`.github/CLA.md`](.github/CLA.md), [`src/sre/LI
 ## 8. Disclaimer
 
 *Swordigo* is a registered trademark of Touch Foo / Ville Mäkynen. This project is an independent community software development kit and compatibility layer. Original game assets, levels, and proprietary binaries are not distributed with this repository and must be legally obtained from the official game package.
+
+## Experimental native Windows x64 game client
+
+Windows client setup, importing your own game data, controls, build instructions and current limitations are documented in [WINDOWS_CLIENT.md](WINDOWS_CLIENT.md). The primary tested combination is Windows 11 x64 with original Swordigo 1.4.13 ARM64 data. This branch covers Windows compatibility and persistent keyboard controls. Optional practice/debug additions live on `codex/windows-extras`.
+
+See [Windows changes](docs/windows-changes.md), [validation status](docs/windows-client-tests.md) and [credits](CREDITS.md). Original game packages and extracted data must be supplied separately.

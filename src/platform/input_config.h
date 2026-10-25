@@ -74,7 +74,7 @@ public:
 
     // Load/save controls config
     void load(const std::string& path);
-    void save(const std::string& path);
+    bool save(const std::string& path);
     void load_defaults();
 
     // Editor mode
@@ -121,6 +121,8 @@ public:
     static std::string scancode_name(int scancode);
 
 private:
+    std::string config_path;
+    void save_after_edit();
     std::vector<TouchButton> buttons;
     bool editing_mode = false;
     EditorMode editor_mode = EDITOR_POSITION;

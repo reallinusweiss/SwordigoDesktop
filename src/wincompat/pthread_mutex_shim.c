@@ -11,7 +11,10 @@
  * only when the platform lacks real pthreads.
  */
 
-#if defined(_WIN32) && !defined(SWORDIGO_PTHREAD_SHIM_DISABLED)
+// MinGW supplies real winpthreads, used by libstdc++ condition variables too.
+// Interposing only its mutex functions leaves pthread_cond_wait operating on
+// incompatible storage and deadlocks the async IO queue on its first job.
+#if defined(_WIN32) && !defined(__MINGW32__) && !defined(SWORDIGO_PTHREAD_SHIM_DISABLED)
 
 #include <windows.h>
 #include <stdint.h>

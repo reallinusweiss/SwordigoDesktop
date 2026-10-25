@@ -9,6 +9,7 @@
 #include <iostream>
 #include <mutex>
 #include <unordered_map>
+#include <cstdio>
 #ifndef _WIN32
 #include <unistd.h>
 #include <pwd.h>
@@ -26,7 +27,7 @@ extern std::string g_instance_assets_dir;
 #if defined(_MSC_VER)
 __declspec(selectany) std::string g_assets_dir = "assets";
 __declspec(selectany) std::string g_instance_assets_dir = "assets";
-#elif defined(__GNUC__)
+#elif defined(__GNUC__) && !defined(SWORDIGO_STATIC_COMPONENTS)
 __attribute__((weak)) std::string g_assets_dir = "assets";
 __attribute__((weak)) std::string g_instance_assets_dir = "assets";
 #endif
@@ -564,6 +565,12 @@ extern "C" bool resolve_vfs_path(const char* original_path, char* out_resolved_p
                                    s_cached_profile != g_active_profile_id ||
                                    s_cached_assets != g_instance_assets_dir;
         if (state_changed) {
+            if (std::getenv("SWORDIGO_TRACE_VFS")) {
+                std::fprintf(stderr,"[VFS/Trace] path=%.160s mod=%zu profile=%zu assets=%zu cached=%zu/%zu/%zu\n",
+                    original_path,g_active_mod_name.size(),g_active_profile_id.size(),g_instance_assets_dir.size(),
+                    s_cached_mod.size(),s_cached_profile.size(),s_cached_assets.size());
+                std::fflush(stderr);
+            }
             s_cache.clear();
             s_cached_mod = g_active_mod_name;
             s_cached_profile = g_active_profile_id;

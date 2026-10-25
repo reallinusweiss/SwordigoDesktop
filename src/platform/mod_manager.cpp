@@ -957,7 +957,12 @@ static bool http_get_raw(const std::string& url, std::string* out,
     addrinfo* res = nullptr;
     int gai = getaddrinfo(parts.host.c_str(), parts.port.c_str(), &hints, &res);
     if (gai != 0 || !res) {
-        if (err) *err = std::string("DNS/connect failed: ") + gai_strerror(gai);
+        if (err) *err = std::string("DNS/connect failed: ") +
+#ifdef _WIN32
+            gai_strerrorA(gai);
+#else
+            gai_strerror(gai);
+#endif
         return false;
     }
     std::unique_ptr<addrinfo, decltype(&freeaddrinfo)> guard(res, freeaddrinfo);

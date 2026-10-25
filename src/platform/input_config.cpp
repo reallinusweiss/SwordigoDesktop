@@ -11,6 +11,9 @@
 #include <cstdio>
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <filesystem>
+#include <iomanip>
+#include <limits>
 
 // Game coordinate space constants
 static const float GAME_W = 960.0f;
@@ -147,7 +150,8 @@ void InputConfig::load_defaults() {
 // ---------------------------------------------------------------------------
 
 void InputConfig::load(const std::string& path) {
-    std::ifstream file(path);
+    config_path = path;
+    std::ifstream file(std::filesystem::u8path(path));
     if (!file.is_open()) {
         std::cout << "[InputConfig] Config not found at " << path
                   << ", using defaults\n";
@@ -226,12 +230,8 @@ void InputConfig::load(const std::string& path) {
         buttons.push_back(current);
     }
 
-    // W is reserved for world-depth movement in desktop WASD controls.
-    for (auto& btn : buttons) {
-        if (btn.name == "jump" && btn.sdl_scancode_alt == SDL_SCANCODE_W) {
-            btn.sdl_scancode_alt = 0;
-        }
-    }
+    // Defaults leave W free for depth movement. Explicit user bindings must
+    // round-trip unchanged, including W as an alternate jump key.
 
     file.close();
 
@@ -254,12 +254,26 @@ void InputConfig::load(const std::string& path) {
 // INI Save (includes all new fields)
 // ---------------------------------------------------------------------------
 
-void InputConfig::save(const std::string& path) {
-    std::ofstream file(path);
+bool InputConfig::save(const std::string& path) {
+    namespace fs = std::filesystem;
+    const auto destination = fs::u8path(path);
+    std::error_code error;
+    if (!destination.parent_path().empty())
+        fs::create_directories(destination.parent_path(), error);
+    if (error) {
+        std::cerr << "[InputConfig] Failed to create config directory: " << error.message() << "\n";
+        return false;
+    }
+    // Write a complete sibling first; a failed/truncated write must not erase
+    // the last working bindings. Replacing is atomic on the target platform.
+    auto temporary = destination;
+    temporary += ".tmp";
+    std::ofstream file(temporary, std::ios::trunc);
     if (!file.is_open()) {
         std::cerr << "[InputConfig] Failed to save config to " << path << "\n";
-        return;
+        return false;
     }
+    file << std::setprecision(std::numeric_limits<float>::max_digits10);
 
     file << "# Swordigo Desktop - Input Configuration v2\n";
     file << "# Positions are in 960x544 game coordinate space\n";
@@ -273,9 +287,9 @@ void InputConfig::save(const std::string& path) {
         file << "[" << b.name << "]\n";
         if (!b.display_name.empty())
             file << "display_name="       << b.display_name       << "\n";
-        file << "game_x="                << (int)b.game_x         << "\n";
-        file << "game_y="                << (int)b.game_y         << "\n";
-        file << "radius="                << (int)b.radius         << "\n";
+        file << "game_x="                << b.game_x              << "\n";
+        file << "game_y="                << b.game_y              << "\n";
+        file << "radius="                << b.radius              << "\n";
         file << "action_type="           << b.action_type         << "\n";
         file << "touch_id="              << b.touch_id            << "\n";
         file << "scancode="              << b.sdl_scancode        << "\n";
@@ -290,15 +304,39 @@ void InputConfig::save(const std::string& path) {
             file << "is_macro=1\n";
             file << "macro_open_touch_id=" << b.macro_open_touch_id << "\n";
             file << "macro_delay_ms="      << b.macro_delay_ms      << "\n";
-            file << "macro_target_x="      << (int)b.macro_target_x << "\n";
-            file << "macro_target_y="      << (int)b.macro_target_y << "\n";
+            file << "macro_target_x="      << b.macro_target_x      << "\n";
+            file << "macro_target_y="      << b.macro_target_y      << "\n";
         }
         file << "\n";
     }
 
     file.close();
+    if (!file) {
+        std::cerr << "[InputConfig] Failed while writing config to " << path << "\n";
+        fs::remove(temporary, error);
+        return false;
+    }
+#ifdef _WIN32
+    const bool replaced = MoveFileExW(temporary.c_str(), destination.c_str(),
+        MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+    if (!replaced) error = std::error_code(GetLastError(), std::system_category());
+#else
+    fs::rename(temporary, destination, error);
+    const bool replaced = !error;
+#endif
+    if (!replaced) {
+        std::cerr << "[InputConfig] Failed to replace config at " << path << ": " << error.message() << "\n";
+        fs::remove(temporary, error);
+        return false;
+    }
+    config_path = path;
     std::cout << "[InputConfig] Saved " << buttons.size()
               << " buttons to " << path << "\n";
+    return true;
+}
+
+void InputConfig::save_after_edit() {
+    if (!config_path.empty()) save(config_path);
 }
 
 // ---------------------------------------------------------------------------
@@ -381,6 +419,7 @@ int InputConfig::add_custom_button(const std::string& display_name, float gx, fl
     buttons.push_back(b);
     std::cout << "[InputConfig] Added custom button '" << display_name 
               << "' (id=" << b.touch_id << ", key=" << scancode_name(scancode) << ")\n";
+    save_after_edit();
     return (int)buttons.size() - 1;
 }
 
@@ -392,6 +431,7 @@ bool InputConfig::remove_button(int index) {
     }
     std::cout << "[InputConfig] Removed custom button '" << buttons[index].display_name << "'\n";
     buttons.erase(buttons.begin() + index);
+    save_after_edit();
     return true;
 }
 
@@ -423,6 +463,7 @@ bool InputConfig::editor_handle_key(int scancode) {
     
     rebind_target = -1;
     editor_mode = EDITOR_POSITION;
+    save_after_edit();
     return true;
 }
 
@@ -754,5 +795,6 @@ void InputConfig::editor_mouse_up() {
                   << "' at (" << buttons[dragging_button].game_x
                   << ", " << buttons[dragging_button].game_y << ")\n";
         dragging_button = -1;
+        save_after_edit();
     }
 }

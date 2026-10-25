@@ -12,7 +12,7 @@ find_package(OpenGL REQUIRED)
 if (WIN32)
     # GLEW supplies the modern (1.2+) OpenGL entry points that opengl32.lib does
     # not export; every host component links it via swordigo_target().
-    find_package(glew CONFIG REQUIRED)
+    find_package(GLEW REQUIRED)
     set(SWORDIGO_GLEW_TARGET GLEW::GLEW)
 endif()
 find_package(ZLIB REQUIRED)
@@ -44,10 +44,18 @@ if (NOT WIN32)
 else()
     # Windows: resolve audio backends through vcpkg's CONFIG packages so the
     # headers (vorbis/vorbisfile.h, mpg123.h) and import libs are wired in.
-    find_package(Vorbis CONFIG REQUIRED)
-    set(VORBISFILE_LIBRARIES Vorbis::vorbisfile Vorbis::vorbis)
-    find_package(MPG123 CONFIG REQUIRED)
-    set(MPG123_LIBRARIES MPG123::libmpg123)
+    find_package(Vorbis CONFIG QUIET)
+    find_package(MPG123 CONFIG QUIET)
+    if (TARGET Vorbis::vorbisfile AND TARGET MPG123::libmpg123)
+        set(VORBISFILE_LIBRARIES Vorbis::vorbisfile Vorbis::vorbis)
+        set(MPG123_LIBRARIES MPG123::libmpg123)
+    else()
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(VORBISFILE REQUIRED IMPORTED_TARGET vorbisfile)
+        pkg_check_modules(MPG123 REQUIRED IMPORTED_TARGET libmpg123)
+        set(VORBISFILE_LIBRARIES PkgConfig::VORBISFILE)
+        set(MPG123_LIBRARIES PkgConfig::MPG123)
+    endif()
 endif()
 
 # Unicorn is optional and runtime-loaded (src/platform/unicorn_dyn.cpp).
@@ -134,4 +142,14 @@ else()
         message(WARNING "SQLite3 not found — Memory Research catalog will be disabled")
         set(SWORDIGO_HAVE_SQLITE3 FALSE)
     endif()
+endif()
+
+# Compile host JIT with this exact compiler/configuration; CMake carries all
+# transitive static dependencies and build ordering instead of guessed filenames.
+if (SWORDIGO_USE_DYNARMIC)
+    set(DYNARMIC_TESTS OFF CACHE BOOL "" FORCE)
+    set(DYNARMIC_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
+    set(DYNARMIC_USE_BUNDLED_EXTERNALS ON CACHE BOOL "" FORCE)
+    set(DYNARMIC_FRONTENDS "A32;A64" CACHE STRING "" FORCE)
+    add_subdirectory(deps/dynarmic "${CMAKE_BINARY_DIR}/dynarmic" EXCLUDE_FROM_ALL)
 endif()

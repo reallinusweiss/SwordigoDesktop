@@ -162,7 +162,7 @@ def emit_cpp(files):
     out.append("")
 
     text = "\n".join(out)
-    with open(OUT_CPP, "w") as f:
+    with open(OUT_CPP, "w", encoding="utf-8") as f:
         f.write(text)
     return len(files), total
 
@@ -202,7 +202,7 @@ void asset_image_free(unsigned char* px);
 }
 #endif
 """
-    with open(OUT_H, "w") as f:
+    with open(OUT_H, "w", encoding="utf-8") as f:
         f.write(h)
 
 

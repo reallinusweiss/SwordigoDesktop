@@ -20,6 +20,8 @@ namespace fs = std::filesystem;
 #include "loader/elf_loader_arm64.h"
 #include "loader/arch_detect.h"
 #include "platform/data_path.h"
+#include "platform/client_preflight.h"
+#include "platform/client_host_smoke.h"
 #include "jni/jni_layer.h"
 #include "jni/jni_layer_arm64.h"
 #include "jni/jni_bridge.h"
@@ -772,7 +774,7 @@ static void pod_touch_direct(int action, int finger_id,
     old_x *= TOUCH_SCALE_X;  old_y *= TOUCH_SCALE_Y;
 
     double time_val = (double)SDL_GetTicks() / 1000.0;
-    const int tap = (action == 1) ? 1 : 0;
+    const int tap = (action == 1 || action == 2) ? 1 : 0;
 
     g_emulator_64->set_dreg(0, time_val);
     g_emulator_64->set_sreg(1, x);
@@ -3535,19 +3537,15 @@ void load_and_boot_arm64() {
     //
     // UNICORN: Patcher still runs unconditionally — exclusive monitor still broken.
     // =========================================================================
-    // NOTE: Applied for ALL backends.
-    // Unicorn (CORRECTNESS): exclusive monitor unreliable — STXR never succeeds.
-    // Dynarmic (PERFORMANCE): eliminates compare_exchange_weak overhead on every
-    //   boost::shared_ptr refcount op. Root-caused 2026-07-21: GUILabel::~GUILabel()
-    //   at 0x1498658 caused 1045ms stalls because each STXR → CAS requires a
-    //   memory barrier; with STXR→STR the destructor runs ~10× faster.
-    //   MemoryWriteExclusive* CAS callbacks remain as a safety net for any
-    //   STXR the scanner misses (e.g. JIT-generated or dynamically patched code).
+    // 1.4.13 keeps the original exclusive operations and real monitor.
+    // The older 1.4.12 GNU COW string runtime still requires its legacy
+    // compatibility patches: starting a new profile otherwise retries an
+    // exclusive store to a null string refcount indefinitely (0x156a598).
+    // Match the existing 1.4.12 portable runtime without changing 1.4.13.
     /* LEGACY_STXR_PATCHER_START
-     * Now runs for both Unicorn (correctness) and Dynarmic (performance).
-     * Do NOT remove.
+     * Retained for Unicorn; never applied to the Dynarmic client.
      */
-    {
+    if (!g_use_dynarmic || swordi_abi == 12) {
         uint32_t NOP = 0xD503201F;
         std::cout << "[Patch64] STXR scan: text_base=0x" << std::hex << g_main_mod_64.text_base
                   << " text_size=0x" << g_main_mod_64.text_size 
@@ -4452,7 +4450,6 @@ void load_and_boot_arm64() {
                     // Scene Loading & Transition
                     {"sre_SceneLoadingView_InitWithGameState", "_ZN5Caver16SceneLoadingView17InitWithGameStateERKN5boost10shared_ptrINS_9GameStateEEERKNS2_INS_7MapNodeEEE"},
                     {"sre_SceneLoadingView_Update",            "_ZN5Caver16SceneLoadingView6UpdateEf"},
-                    {"sre_SceneLoadingView_AnimateIn",         "_ZN5Caver16SceneLoadingView9AnimateInEv"},
                     {"sre_Scene_FinishLoad",                   "_ZN5Caver5Scene10FinishLoadEv"},
                     {"sre_SceneObjectGroup_FinishLoad",        "_ZN5Caver16SceneObjectGroup10FinishLoadEv"},
                     {"sre_ComponentOutletBase_Connect",        "_ZN5Caver19ComponentOutletBase7ConnectEPKNS_9ComponentE"},
@@ -6303,6 +6300,12 @@ void load_and_boot_arm64() {
     uint64_t updateApp = g_loader_64->get_symbol_vaddr(&g_main_mod_64, "Java_com_touchfoo_swordigo_Native_updateApplication");
     uint64_t drawApp = g_loader_64->get_symbol_vaddr(&g_main_mod_64, "Java_com_touchfoo_swordigo_Native_drawApplication");
     uint64_t handleTouchEvent = g_loader_64->get_symbol_vaddr(&g_main_mod_64, "Java_com_touchfoo_swordigo_Native_handleTouchEvent");
+    uint64_t handleBackButtonPress = g_loader_64->get_symbol_vaddr(&g_main_mod_64, "Java_com_touchfoo_swordigo_Native_handleBackButtonPress");
+    // Route confirmation to the actual modal view, not the stale gameplay HUD.
+    const uint64_t gameover_vtable_symbol = swordi_abi == 13
+        ? g_loader_64->get_symbol_vaddr(&g_main_mod_64, "_ZTVN5Caver22GameOverViewControllerE") : 0;
+    const uint64_t gameover_key_handler = swordi_abi == 13
+        ? g_loader_64->get_symbol_vaddr(&g_main_mod_64, "_ZN5Caver12GameOverView19HandleKeyboardEventERKNS_16GUIKeyboardEventE") : 0;
     g_touch_64_handle = handleTouchEvent;   // for pod_touch_direct()
     uint64_t snapshotLoaded = g_loader_64->get_symbol_vaddr(&g_main_mod_64, "Java_com_touchfoo_swordigo_Native_snapshotLoaded");
     uint64_t sre_scene_shifter_tick_addr = g_use_sre
@@ -6473,6 +6476,27 @@ void load_and_boot_arm64() {
                 }
                 // Integer args via call()
                 g_emulator_64->call(handleTouchEvent, {env_ptr, 0, (uint64_t)action, (uint64_t)id, (uint64_t)tap_count});
+            };
+
+            auto dispatch_gameover_key = [&](int native_key) -> bool {
+                if (!gameover_vtable_symbol || !gameover_key_handler || !g_guest_memory ||
+                    g_emulator_64->has_faulted()) return false;
+                // Verified 1.4.13 navigation layout, shared with the scene shifter.
+                uint64_t shell = *(uint64_t*)(g_guest_memory + g_main_mod_64.base_addr + 0x651700);
+                if (!is_valid_guest_ptr(shell)) return false;
+                uint64_t nav = *(uint64_t*)(g_guest_memory + shell + 0x90);
+                if (!is_valid_guest_ptr(nav)) return false;
+                uint64_t controller = *(uint64_t*)(g_guest_memory + nav + 0x50);
+                if (!is_valid_guest_ptr(controller) ||
+                    *(uint64_t*)(g_guest_memory + controller) != gameover_vtable_symbol + 16) return false;
+                uint64_t view = *(uint64_t*)(g_guest_memory + controller + 0x18);
+                if (!is_valid_guest_ptr(view)) return false;
+                constexpr uint64_t event_address = 0x3F800;
+                std::memset(g_guest_memory + event_address, 0, 128);
+                *(int*)(g_guest_memory + event_address + 0x0c) = 1;
+                *(int*)(g_guest_memory + event_address + 0x10) = native_key;
+                g_emulator_64->call(gameover_key_handler, {view, event_address});
+                return true;
             };
 
             auto dispatch_gameplay_button = [&](const std::string& name, bool is_down) -> bool {
@@ -8417,6 +8441,17 @@ void load_and_boot_arm64() {
                             bool is_down = (event.type == SDL_EVENT_KEY_DOWN);
                             int scancode = event.key.scancode;
 
+                            // Use the original modal confirmation handler. Enter
+                            // maps to its Control action; jump/attack bindings remain valid.
+                            if (is_down && !event.key.repeat) {
+                                int confirm_key = 0;
+                                if (event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER ||
+                                    event.key.key == SDLK_LCTRL || event.key.key == SDLK_RCTRL) confirm_key = 0x11;
+                                else if (event.key.key == SDLK_SPACE || event.key.key == SDLK_UP) confirm_key = 0x26;
+                                else if (event.key.key == SDLK_ESCAPE) confirm_key = 0x1b;
+                                if (confirm_key && dispatch_gameover_key(confirm_key)) break;
+                            }
+
                             // ---- Virtual Key translation for Android mods ----
                             bool handled_virtual = false;
                             extern bool g_sre_overlay_blocking;
@@ -8605,7 +8640,7 @@ void load_and_boot_arm64() {
                                 } else if (!click_swallowed_by_gui && !g_srt_overlay.is_visible()) {
                                     float x = event.button.x * 960.0f / (float)g_win_w;
                                     float y = 544.0f - (event.button.y * 544.0f / (float)g_win_h);
-                                    call_touch_64(2, 1, accumulated_time, x, y, last_mouse_x, last_mouse_y, 0);
+                                    call_touch_64(2, 1, accumulated_time, x, y, last_mouse_x, last_mouse_y, 1);
                                     last_mouse_x = -1.0f; last_mouse_y = -1.0f;
                                 }
                                 click_swallowed_by_gui = false;
@@ -8623,7 +8658,7 @@ void load_and_boot_arm64() {
                             float x = event.tfinger.x * 960.0f;
                             float y = (1.0f - event.tfinger.y) * 544.0f;
                             int finger_id = (int)(event.tfinger.fingerID % 10) + 20;
-                            call_touch_64(2, finger_id, accumulated_time, x, y, x, y, 0);
+                            call_touch_64(2, finger_id, accumulated_time, x, y, x, y, 1);
                             break;
                         }
                         case SDL_EVENT_FINGER_MOTION: {
@@ -8723,9 +8758,21 @@ void load_and_boot_arm64() {
                         bool is_gameplay_btn = (btn->name == "left" || btn->name == "right" || btn->name == "jump" || btn->name == "attack" || btn->name == "magic" || btn->name == "use_item");
                         bool use_native = (listener != 0) && is_gameplay_btn;
 
+                        // Android's real Back event opens/closes the game menu.
+                        // A touch at the legacy "menu" button coordinates lands
+                        // in empty HUD space in 1.4.13 and made Escape ineffective.
+                        if (btn->name == "menu" && handleBackButtonPress) {
+                            if (is_down && !btn->is_pressed && !dispatch_gameover_key(0x1b))
+                                g_emulator_64->call(handleBackButtonPress, {env_ptr, 0});
+                            btn->is_pressed = is_down;
+                            continue;
+                        }
+
                         if (is_down && !btn->is_pressed) {
                             btn->is_pressed = true;
                             
+                            if ((btn->name == "jump" || btn->name == "attack") &&
+                                dispatch_gameover_key(btn->name == "jump" ? 0x26 : 0x11)) continue;
                             if (use_native) {
                                 dispatch_gameplay_button(btn->name, true);
                             } else if (btn->is_macro && btn->macro_open_touch_id >= 0) {
@@ -8898,6 +8945,7 @@ int main(int argc, char* argv[]) {
     os_external::set_dev_working_dir(); // Windows: chdir to repo root so src/assets resolves
     // Check for --headless flag
     bool headless = false;
+    bool check_data_only = false;
     bool use_openswordigo = false;
     std::string openswordigo_scene = "town_part1.scene";
     std::string openswordigo_library;
@@ -8929,6 +8977,18 @@ int main(int argc, char* argv[]) {
                       << "' res=" << g_pod_w << "x" << g_pod_h << std::endl;
         }
         if (strcmp(argv[i], "--headless") == 0) headless = true;
+        if (strcmp(argv[i], "--check-data") == 0) check_data_only = true;
+        if (strcmp(argv[i], "--host-smoke") == 0) return client_host_smoke();
+        if (strcmp(argv[i], "--guest-smoke") == 0) return client_guest_smoke();
+        if (strcmp(argv[i], "--help") == 0) {
+            std::cout << "SwordigoDesktop ELF/JIT client\n"
+                "  --no-launcher --dynarmic --lib <ARM64 libswordigo.so> --assets <directory>\n"
+                "  --check-data    Validate game/asset/SRE files and exit (0=present, 2=invalid).\n"
+                "  --host-smoke    Test host graphics, audio, events and synthetic save IO.\n"
+                "  --guest-smoke   Test 4 GiB mapping and load/relocate both guest SREs.\n"
+                "See WINDOWS_CLIENT.md for setup, controls, saves and logs.\n";
+            return 0;
+        }
         if (strcmp(argv[i], "--openswordigo") == 0) use_openswordigo = true;
         if (strcmp(argv[i], "--openswordigo-scene") == 0 && i + 1 < argc) {
             openswordigo_scene = argv[++i];
@@ -9006,6 +9066,16 @@ int main(int argc, char* argv[]) {
             std::cerr.flush();
             std::quick_exit(0);
         }
+    }
+
+    if (check_data_only) {
+        const auto sre = get_data_path(g_lib_name.find("v1.4.13") != std::string::npos
+            ? "libs/libsre13.so" : "libs/libsre12.so");
+        const auto errors = client::check_data(get_data_path(g_lib_name),
+            get_data_path(g_instance_assets_dir), g_use_sre ? sre : "");
+        for (const auto& error : errors) std::cerr << "[Setup] " << error << '\n';
+        if (errors.empty()) std::cout << "[Setup] Required containers present; gameplay compatibility untested.\n";
+        return errors.empty() ? 0 : 2;
     }
 
     // Pod mode always runs the ARM64 Dynarmic + SRE13 pipeline at low res.

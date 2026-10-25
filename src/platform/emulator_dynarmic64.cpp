@@ -983,7 +983,6 @@ public:
             }
 
             // Unknown breakpoint — log and halt
-
             std::cerr << "[Dynarmic] Unknown breakpoint at 0x" << std::hex << pc << std::dec << std::endl;
             emu->get_jit()->HaltExecution(Dynarmic::HaltReason::UserDefined2);
             return;
@@ -1135,19 +1134,9 @@ EmulatorDynarmic64::EmulatorDynarmic64(uint8_t* guest_mem, uint64_t size)
     // Enable BlockLinking optimization for maximum emulation performance.
     config.optimizations = Dynarmic::all_safe_optimizations;
 
-    // YUZU-INSPIRED: Enable unsafe JIT fast-paths for maximum CPU execution speed
-    config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_UnfuseFMA;
-    config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_ReducedErrorFP;
-    config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_InaccurateNaN;
-    config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_IgnoreStandardFPCRValue;
-    // RESTORED (regression fix): Unsafe_IgnoreGlobalMonitor makes STXR/STLXR always
-    // succeed. This is the known-good behaviour from the 2-day-old reference build.
-    // Removing it (to rely on the real global monitor + MemoryWriteExclusive CAS)
-    // caused guest exclusive-store retry loops during menu bring-up to spin forever
-    // — the game froze silently right after "Menu background loaded" (no fault, no
-    // frame loop, draws=0). Keep it enabled; the STXR-neutering patcher in main.cpp
-    // handles refcount correctness on top of this.
-    config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_IgnoreGlobalMonitor;
+    // Preserve guest atomic and floating-point semantics. Unsafe flags were
+    // previously specified here but filtered because unsafe_optimizations was
+    // false; the old startup message incorrectly claimed they were enabled.
 
     // Enable fastmem optimization since we mapped the entire 4GB virtual address space
     // and filled the bridge and magic return regions with valid HLT instructions.
@@ -1177,7 +1166,7 @@ EmulatorDynarmic64::EmulatorDynarmic64(uint8_t* guest_mem, uint64_t size)
     uint64_t stack_base = size - 0x1000;
     jit->SetSP(stack_base);
 
-    std::cout << "[Dynarmic] JIT initialized (512MB code cache, Fastmem, Unsafe FMA/NaN/MXCSR fast-paths enabled)"
+    std::cout << "[Dynarmic] JIT initialized (512MB code cache, Fastmem, safe optimizations, exclusive monitor)"
               << ", stack at 0x" << std::hex << stack_base << std::dec << std::endl;
 
     // Register this instance for use by PC hook install/remove API

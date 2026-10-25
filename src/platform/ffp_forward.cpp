@@ -87,9 +87,30 @@ std::string normalize_angle_glsl(const char* src) {
     size_t i = 0;
     while (i < in.size()) {
         char c = in[i];
-        // Drop "#version ..." — the assembled source declares its own.
-        if (c == '#' && i + 8 < in.size() && in.compare(i, 8, "#version") == 0) {
-            while (i < in.size() && in[i] != '\n') i++;
+        // Desktop GLSL preprocessors reject unsigned #if operands. Specialize
+        // ANGLE's texture-unit branches for this renderer's single unit while
+        // retaining unsigned constants in shader arithmetic and array bounds.
+        if (c == '#') {
+            const bool condition = in.compare(i, 4, "#if ") == 0;
+            while (i < in.size() && in[i] != '\n') {
+                if (condition && in.compare(i, 9, "kTexUnits") == 0) {
+                    out += '1';
+                    i += 9;
+                    continue;
+                }
+                if (condition && (in[i] == 'u' || in[i] == 'U') && i > 0 &&
+                    in[i - 1] >= '0' && in[i - 1] <= '9' &&
+                    (i + 1 == in.size() || !is_word_char(in[i + 1]))) {
+                    ++i;
+                    continue;
+                }
+                // The assembled program supplies its own desktop version.
+                if (in.compare(i, 8, "#version") == 0) {
+                    while (i < in.size() && in[i] != '\n') ++i;
+                    break;
+                }
+                out += in[i++];
+            }
             continue;
         }
         bool word_start = (i == 0) || !is_word_char(in[i - 1]);
@@ -1211,7 +1232,13 @@ namespace ffp {
 void init_from_env() {
     if (g_quality >= 0) return;
 
+#ifdef _WIN32
+    // Preserve the original GLES1 multi-texture font mask. The optional
+    // ANGLE/PBR path currently specializes only one texture unit.
+    g_quality = OFF;
+#else
     g_quality = PBR;
+#endif
     if (const char* q = getenv("SWORDIGO_FFP_LIGHTING")) {
         if (q[0] == '\0' || strcmp(q, "0") == 0 || strcmp(q, "off") == 0 || strcmp(q, "OFF") == 0)
             g_quality = OFF;

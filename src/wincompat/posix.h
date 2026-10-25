@@ -8,7 +8,8 @@
  *   - ssize_t / mode_t
  *
  * Include as the FIRST include in a translation unit (it pulls <winsock2.h>
- * in before <windows.h>). No-op on Linux / MinGW.
+ * in before <windows.h>). MinGW supplies most CRT functions; its missing
+ * declarations/adapters are provided separately below. No-op on Linux.
  */
 #ifndef _SWORDIGO_WINCOMPAT_POSIX_H
 #define _SWORDIGO_WINCOMPAT_POSIX_H
@@ -171,4 +172,42 @@ inline int fcntl(int fd, int cmd, ...) {
 
 #endif /* __cplusplus */
 #endif /* _WIN32 && !MINGW */
+#if defined(__MINGW32__) && defined(__cplusplus)
+#include <cstdint>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <sys/time.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <direct.h>
+#include <cerrno>
+#include <cstdlib>
+#include <ctime>
+inline int mkdir(const char* path, mode_t) { return _mkdir(path); }
+inline long lrand48() { return static_cast<long>((static_cast<unsigned long>(rand()) << 16) ^ rand()); }
+#if !defined(_POSIX_C_SOURCE) || _POSIX_C_SOURCE < 200809L
+inline struct tm* localtime_r(const time_t* t, struct tm* out) {
+    return localtime_s(out, t) == 0 ? out : nullptr;
+}
+#endif
+using nfds_t = unsigned long;
+using in_addr_t = uint32_t;
+struct iovec { void* iov_base; size_t iov_len; };
+inline ssize_t writev(int fd, const iovec* vec, int count) {
+    ssize_t total = 0;
+    for (int i=0; i<count; ++i) {
+        int n = _write(fd, vec[i].iov_base, static_cast<unsigned>(vec[i].iov_len));
+        if (n < 0) return total ? total : -1;
+        total += n;
+        if (static_cast<size_t>(n) != vec[i].iov_len) break;
+    }
+    return total;
+}
+// Guest socket layouts differ from Winsock. These unsupported operations must
+// fail explicitly until marshalled, never report success or cast guest pollfd.
+inline int poll(pollfd*, nfds_t, int) { errno=ENOSYS; return -1; }
+inline int ioctl(int, unsigned long, void*) { errno=ENOSYS; return -1; }
+inline int fcntl(int, int, ...) { errno=ENOSYS; return -1; }
+#endif
 #endif /* include guard */

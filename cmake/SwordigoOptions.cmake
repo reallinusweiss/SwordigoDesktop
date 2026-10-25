@@ -8,6 +8,14 @@ option(SWORDIGO_BUILD_SRE "Build the ARM64 guest libsre.so" ON)
 option(SWORDIGO_BUILD_RUBY "Build the asset viewer" ON)
 option(SWORDIGO_BUILD_RUBY_GG "Build ruby_gg (Xpera native editor frontend)" ON)
 option(SWORDIGO_BUILD_STUDIO "Build swordigo_build_studio GUI launcher" ON)
+option(SWORDIGO_CLIENT_ONLY "Build the original ELF/JIT game client without editor tools" OFF)
+if (SWORDIGO_CLIENT_ONLY)
+    set(SWORDIGO_STATIC ON CACHE BOOL "Use one host executable" FORCE)
+    set(SWORDIGO_BUILD_RUBY OFF CACHE BOOL "" FORCE)
+    set(SWORDIGO_BUILD_RUBY_GG OFF CACHE BOOL "" FORCE)
+    set(SWORDIGO_BUILD_STUDIO OFF CACHE BOOL "" FORCE)
+    set(SWORDIGO_USE_FFMPEG OFF CACHE BOOL "" FORCE)
+endif()
 # CMAKE MODE DEV — the single switch that turns the developer test suite on.
 # OFF = normal/release build: no test target is declared and nothing lands in
 # <dist>/tests/. ON = declare every test target and emit the binaries into

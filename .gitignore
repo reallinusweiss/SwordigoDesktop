@@ -1,5 +1,5 @@
 # ============================================================
-# SwordigoDesktop — Comprehensive .gitignore for GitHub Release
+# SwordigoDesktop â€” Comprehensive .gitignore for GitHub Release
 # ============================================================
 # -------- BUILDS / OUTPUTS / BINARIES --------
 # Build artifacts
@@ -72,7 +72,7 @@ engine/*/arm64-v8a/libswordigo.so
 engine/*/armeabi-v7a/libswordigo.so
 engine/*/arm64-v8a/libsre.so
 # -------- PROPRIETARY GAME BINARIES --------
-# Extracted from original APKs — copyrighted, DO NOT DISTRIBUTE
+# Extracted from original APKs â€” copyrighted, DO NOT DISTRIBUTE
 libswordigo*.so
 rl_libswordigo*.so
 rl_libmini.so
@@ -81,7 +81,7 @@ rl_*.so
 # Game assets (copyrighted, not distributed)
 assets/
 # -------- COPYRIGHTED GAME MUSIC --------
-# Original Swordigo + RLSwordigo music — copyrighted
+# Original Swordigo + RLSwordigo music â€” copyrighted
 /res/
 /res/**
 !src/ruby/android/res/
@@ -197,3 +197,22 @@ __pycache__/
 *.glb
 src/tools/King_Crown/
 docs/livememory/
+
+# Local Windows client build/package output
+/build-win64/
+/binw/
+/dist-windows/
+/play-windows/
+/Swordigo_Windows_Portable/
+/GitHub-Release/
+/.swordfare/
+*.apkm
+*.apk
+
+# Publication preparation and local preferences
+/GitHub-Release/
+/.Rhistory
+/imgui.ini
+
+# Generated local validation output
+/docs/windows-package-tests.json

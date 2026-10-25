@@ -157,6 +157,16 @@ void* reserve_large_region(uint64_t size) {
 #endif
 }
 
+void release_large_region(void* region, uint64_t size) {
+    if (!region) return;
+#ifdef _WIN32
+    (void)size;
+    VirtualFree(region, 0, MEM_RELEASE);
+#else
+    munmap(region, size);
+#endif
+}
+
 void* load_library(const std::string& path) {
 #ifdef _WIN32
     std::wstring ws;
@@ -233,7 +243,9 @@ std::string dev_root_dir() {
 // like "src/assets/..." resolve from the repository layout. No-op elsewhere.
 bool set_dev_working_dir() {
 #ifdef _WIN32
-    std::string root = dev_root_dir();
+    const auto binary_dir = exe_dir();
+    std::string root = std::filesystem::exists(std::filesystem::u8path(binary_dir) / "portable-client.txt")
+        ? binary_dir : dev_root_dir();
     if (root.empty()) return false;
     int need = MultiByteToWideChar(CP_UTF8, 0, root.c_str(), (int)root.size(), nullptr, 0);
     if (need > 0) {

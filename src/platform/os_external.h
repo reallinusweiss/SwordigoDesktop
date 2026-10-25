@@ -55,6 +55,7 @@ std::string library_error();                        // last error message
 // e.g. the 4 GiB ARM64 guest address space. Returns nullptr on failure.
 // Linux: mmap MAP_ANONYMOUS|MAP_NORESERVE   Windows: VirtualAlloc MEM_RESERVE
 void* reserve_large_region(uint64_t size);
+void release_large_region(void* region, uint64_t size);
 
 } // namespace os_external
 

@@ -20,6 +20,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <exception>
 
 #ifndef _WIN32
 #include <execinfo.h>
@@ -48,7 +49,27 @@ const char* signal_name(int sig) {
 
 std::string capture_backtrace() {
     std::string out;
-#ifndef _WIN32
+#ifdef _WIN32
+    void* frames[64];
+    const USHORT count=CaptureStackBackTrace(0,64,frames,nullptr);
+    for (USHORT i=0;i<count;++i) {
+        HMODULE module=nullptr;
+        char path[4096]={};
+        char line[4608]={};
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                reinterpret_cast<LPCSTR>(frames[i]),&module)) {
+            GetModuleFileNameA(module,path,sizeof(path));
+            const char* leaf=std::strrchr(path,'\\');
+            const auto offset=reinterpret_cast<uintptr_t>(frames[i])-reinterpret_cast<uintptr_t>(module);
+            std::snprintf(line,sizeof(line),"  %s+0x%llx\n",leaf ? leaf+1 : path,
+                static_cast<unsigned long long>(offset));
+        } else {
+            std::snprintf(line,sizeof(line),"  dynamic code %p\n",frames[i]);
+        }
+        out+=line;
+    }
+#else
     void* frames[64];
     int n = backtrace(frames, 64);
     char** syms = backtrace_symbols(frames, n);
@@ -234,6 +255,18 @@ void install_crash_handler() {
     sigaction(SIGBUS,  &sa, nullptr);
 #endif
 #else
+    std::set_terminate([] {
+        // Capture before abort()/signal dispatch loses the exception's callsite.
+        if (auto error=std::current_exception()) {
+            try { std::rethrow_exception(error); }
+            catch (const std::exception& e) { std::fprintf(stderr,"[Fatal] Uncaught C++ exception: %s\n",e.what()); }
+            catch (...) { std::fprintf(stderr,"[Fatal] Uncaught non-standard C++ exception\n"); }
+        }
+        const auto trace=capture_backtrace();
+        std::fprintf(stderr,"[Fatal] Native exception stack:\n%s",trace.c_str());
+        std::fflush(stderr);
+        std::abort();
+    });
     std::signal(SIGSEGV, fatal_signal_handler);
     std::signal(SIGABRT, fatal_signal_handler);
     std::signal(SIGILL,  fatal_signal_handler);

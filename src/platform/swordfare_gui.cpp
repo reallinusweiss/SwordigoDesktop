@@ -12,7 +12,7 @@
 //     with TODO so they're easy to find.
 // =============================================================================
 
-#if defined(_WIN32) && !defined(__MINGW32__)
+#if defined(_WIN32)
 // Winsock must precede <windows.h>; swordfare_gui.h -> gl_inc.h pulls it.
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN

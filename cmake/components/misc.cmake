@@ -1,14 +1,10 @@
 # ============================================================================
-# Component: third-party build steps (Dynarmic JIT, FFmpeg) + install rules.
-# Dynarmic/FFmpeg are built out-of-tree via custom targets, then linked as
-# static libs by swordfare_boot.
+# Component: compatibility build target and install rules.
+# Dynarmic is an integrated host CMake target; FFmpeg is runtime-loaded.
 # ============================================================================
 
 if (SWORDIGO_USE_DYNARMIC)
-    add_custom_target(dynarmic-build
-        COMMAND ${CMAKE_COMMAND} -S ${CMAKE_SOURCE_DIR}/deps/dynarmic -B ${SWORDIGO_DYNARMIC_ROOT} -DCMAKE_BUILD_TYPE=Release -DDYNARMIC_TESTS=OFF -DDYNARMIC_FRONTENDS=A64 -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DDYNARMIC_IGNORE_ASSERTS=ON -DDYNARMIC_WARNINGS_AS_ERRORS=OFF -Wno-dev
-        COMMAND ${CMAKE_COMMAND} --build ${SWORDIGO_DYNARMIC_ROOT} --target dynarmic --config Release -j
-        USES_TERMINAL)
+    add_custom_target(dynarmic-build DEPENDS dynarmic)
 endif()
 
 # FFmpeg is dynamically loaded at runtime via dlopen (see platform/ffmpeg_dyn.cpp).
@@ -22,7 +18,9 @@ endif()
 # These install rules only matter when staging into a packaging prefix.
 # ---------------------------------------------------------------------------
 if (SWORDIGO_BUILD_SRE)
-    install(FILES "${CMAKE_SOURCE_DIR}/bin/libs/libsre12.so" DESTINATION bin/libs COMPONENT sre)
+    add_dependencies(swordfare_boot sre sre13)
+    install(FILES "${CMAKE_SOURCE_DIR}/${SWORDIGO_DIST_DIR}/libs/libsre12.so"
+        "${CMAKE_SOURCE_DIR}/${SWORDIGO_DIST_DIR}/libs/libsre13.so" DESTINATION bin/libs COMPONENT sre)
 endif()
 install(TARGETS swordfare_boot DESTINATION bin COMPONENT runtime)
 if (SWORDIGO_BUILD_RUBY)
