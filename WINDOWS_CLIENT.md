@@ -59,4 +59,4 @@ The build compiles the host, both ARM64 SREs and all six core client tests, runs
 
 An existing compatible toolchain can be reused with `-ToolchainPrefix C:/path/to/ucrt64` on `build.ps1`. It changes only where build dependencies are read.
 
-Build/test status and practical limitations: [windows-client-tests.md](docs/windows-client-tests.md). Upstream/editor instructions remain in BUILD.md and README.md; those targets have not been revalidated as part of this Windows client contribution.
+Upstream/editor instructions remain in BUILD.md and README.md; those targets have not been revalidated as part of this Windows client contribution.

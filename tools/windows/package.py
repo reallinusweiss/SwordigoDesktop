@@ -57,13 +57,10 @@ def main():
     for src, dst in [('WINDOWS_CLIENT.md','WINDOWS_CLIENT.md'), ('LICENSE.md','LICENSE.md'),
                      ('WINDOWS_CLIENT.md','README.md'), ('CREDITS.md','CREDITS.md'),
                      ('COPYING.GPL-3.0.txt','COPYING.GPL-3.0.txt'),
-                     ('docs/windows-changes.md','docs/windows-changes.md'),
                      ('src/sre/LICENSE.md','licenses/project/SRE-LICENSE.md'),
                      ('src/platform/LICENSE.md','licenses/project/Platform-LICENSE.md'),
                      ('src/ruby/LICENSE.md','licenses/project/Ruby-LICENSE.md'),
                      ('tools/windows/import_apkm.py','tools/windows/import_apkm.py'),
-                     ('docs/windows-client-tests.md','docs/windows-client-tests.md'),
-                     ('docs/windows-gameplay-timing.md','docs/windows-gameplay-timing.md'),
                      ('tools/windows/Start-Swordigo.cmd','Start-Swordigo.cmd'),
                      ('tools/windows/packages.lock.json','packages.lock.json')]:
         copy(ROOT/src,dst)

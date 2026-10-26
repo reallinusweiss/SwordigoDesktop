@@ -50,7 +50,7 @@ def main():
     with zipfile.ZipFile(ROOT/'dist-windows/Swordigo-Windows-x64.zip') as archive:
         bad = [n for n in archive.namelist() if Path(n).name.lower().startswith('libswordigo') or n.lower().endswith('.apk')]
         record('archive excludes original game binaries/APKs',not bad,bad)
-    report['gameplay']='This clean package test excludes originals. Local 1.4.13 runtime results: docs/windows-client-tests.md.'
+    report['gameplay']='This clean package test excludes originals; gameplay is not tested.'
     dest=ROOT/'docs/windows-package-tests.json'
     dest.write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
     for result in report['tests']:print(result['status'],result['name'])
